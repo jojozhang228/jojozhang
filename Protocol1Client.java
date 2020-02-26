@@ -14,11 +14,15 @@ import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public class Protocol1Client {
  
- static int portNo = 11337;
+	
+	private static final String key = "aesEncryptionKey";
+	private static final String initVector = "encryptionIntVec";
+	static int portNo = 11337;
 
  public static void main (String[] args) {
 	
@@ -38,6 +42,7 @@ public class Protocol1Client {
  
  private static class ProtocolInstance implements Runnable {
 	
+	private static final String Cipher_Mode = null;
 	Socket myConnection;
 	boolean debug = true;
 	static Cipher decAEScipher;
@@ -70,7 +75,6 @@ public class Protocol1Client {
 		
 		
 		// Protocol Step 2
-		// We send the nonce challenge. {Ns}_Kcs
 		SecureRandom random = new SecureRandom();
 		byte[] serverNonce = new byte[16];
 		random.nextBytes(serverNonce);
@@ -85,12 +89,11 @@ public class Protocol1Client {
 		    //Protocol Step 3
 		    byte[] message3 = new byte[32];
 		    outStream.write(message3);
-		    byte[] clientNonce = decAEScipher.doFinal(message3);
-		    if (debug) System.out.println("Recived M3 :"+byteArrayToHexString(message3));
-		    if (debug) System.out.println("    Decrypts to Nc: "+byteArrayToHexString(clientNonce));
+		    
+		    if (debug) System.out.println("sending back :"+byteArrayToHexString(message3));
 		    
 		    // Calculate session key
-		    byte[] keyBytes = xorBytes(serverNonce,clientNonce);
+		    byte[] keyBytes = new byte[16];
 		    SecretKeySpec secretKeySpec = new SecretKeySpec(keyBytes, "AES");
 		    Cipher decAEScipherSession = Cipher.getInstance("AES");			
 		    decAEScipherSession.init(Cipher.DECRYPT_MODE, secretKeySpec);
@@ -99,42 +102,38 @@ public class Protocol1Client {
 		    if (debug) System.out.println("Session key :"+byteArrayToHexString(keyBytes));
 		    
 		    //Protocol Step 4 
-		    byte[] message4pt =  new byte[32];
-		    System.arraycopy(clientNonce, 0, message4pt, 0, 16);
-		    System.arraycopy(serverNonce, 0, message4pt, 16, 16);
-		    byte[] cipherTextM4 = encAEScipherSession.doFinal(message4pt);	
-		    if (debug) System.out.println("Sending M4 pt:"+byteArrayToHexString(message4pt));
-		    if (debug) System.out.println("    M4 ct:"+byteArrayToHexString(cipherTextM4));
-		    outStream.write(cipherTextM4);
+		    byte[] sessionkey =  new byte[48];
+		    inStream.read(sessionkey);
+		    if (debug) System.out.println("receiveing key:"+byteArrayToHexString(sessionkey));
 		    
 		    //Protocol Step 5 
-		    byte[] cipherTextM5 =  new byte[48];
-		    inStream.read(cipherTextM5);
-		    if (debug) System.out.println("Recived M5 ct:"+byteArrayToHexString(cipherTextM5));
-		    byte[] message5pt = decAEScipherSession.doFinal(cipherTextM5);		
-		    byte[] inNs = new byte[16];
-		    byte[] inNc = new byte[16];
-		    System.arraycopy(message5pt, 0, inNs, 0, 16);
-		    System.arraycopy(message5pt, 16, inNc, 0, 16);
-		    if (debug) System.out.println("    M5 plainText:"+byteArrayToHexString(message5pt));
-		    if (debug) System.out.println("    M5 inNc:"+byteArrayToHexString(inNc));
-		    if (debug) System.out.println("    M5 inNs:"+byteArrayToHexString(inNs));
+		    outStream.write(sessionkey);
+		    if (debug) System.out.println("sending key:"+byteArrayToHexString(sessionkey));
 		    
-		    //Check the challenge values are correct.
-		    if (!(Arrays.equals(inNc,clientNonce) && Arrays.equals(inNs,serverNonce))) {
-			outStream.write("Nonces dont match".getBytes());
-			if (debug) System.out.println("Nonces dont match,");
-			return;
-		    }
-		    if (debug) System.out.println("Nonces match,");
 		    
+		    //token out
+		    byte[] mess = new byte[inStream.available()];
+		    inStream.read(mess);
+		    byte[] decryptedmess = decAEScipherSession.doFinal(mess);
+		    if(debug) System.out.println(new String(decryptedmess));
+		    
+		    /*IvParameterSpec iv = new IvParameterSpec(initVector.getBytes("UTF-8"));
+	        SecretKeySpec skeySpec = new SecretKeySpec(key.getBytes("UTF-8"), "AES");
+		    
+		    Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+		    cipher.init(Cipher.DECRYPT_MODE, skeySpec, iv);
+		    
+		    String value;
+			byte[] plainTextM6 = cipher.doFinal(value.getBytes());
+
+			
 		    //Protocol Step 6
-		    byte[] plainTextM6 = ("Well Done. Submit this value: "+secretValue()).getBytes();
+		    //byte[] plainTextM6 = ("Well Done. Submit this value: "+secretValue()).getBytes();
 		    byte[] cipherTextM6 = encAEScipherSession.doFinal(plainTextM6);
-		    outStream.write(cipherTextM6);
+		    inStream.read(cipherTextM6);
 		    if (debug) System.out.println("Secret sent: "+new String(plainTextM6));
 		    myConnection.close();
-		    
+		    */
 		    //Oh, isn't Java fun:	
 		} catch (IllegalBlockSizeException e) {
 		    outStream.write("Bad block size".getBytes());
@@ -192,20 +191,6 @@ public class Protocol1Client {
 	} 
 	return buf.toString();
  } 
- 
- private static byte[] hexStringToByteArray(String s) {
-	int len = s.length();
-	byte[] data = new byte[len / 2];
-	for (int i = 0; i < len; i += 2) {
-	    data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-				  + Character.digit(s.charAt(i+1), 16));
-	}
-	return data;
- }
- 
 
- private static String secretValue() {
-	Classified;
-	}
- }
+}
 
